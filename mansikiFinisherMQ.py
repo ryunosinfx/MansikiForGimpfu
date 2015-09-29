@@ -16,55 +16,148 @@ cmd = "gimp --no-interface --console-messages --no-data --no-splash --batch-inte
 #---------------------------------------------------------------------
 # Queue
 class AsyncCallUnionFile(threading.Thread):
-    def __init__(self, q, finalPrefix, prefix, listOfFile, works, width, height, offsetX, offsetY, direction):
+    def __init__(self, q, finalPrefix, prefix, works, width, height, direction):
         threading.Thread.__init__(self)
         self.q = q
-        self.target = target
+        self.finalPrefix = finalPrefix
+        self.prefix = prefix
         self.works = works
-        self.dpi = dpi
-        self.size = size
-        self.frontPrefix = frontPrefix
-        self.mainPrefix = mainPrefix
-        self.rearPrefix = rearPrefix
+        self.width = width
+        self.height = height
         self.direction = direction
-        self.isCut = isCut
-        self.padding = padding
 
     def run(self):
         while True: 
-           item = self.q.get() 
-           print item
-           os.system(item)
+           fileNames = self.q.get() 
+           self.doUnionForPrintDo(fileNames)
            self.q.task_done() 
+    def doUnionForPrintDo(self, fileNames):
+		(lastFileName, pngFileNameSave) = fileNames
+		RGB=0
+		WHITEFILL=2
+		NONINTERACTIVE=1
+		quality=1.00
+		smoothing=0.00
+		optimize=1
+		progressive=0
+		comment=""
+		subsmp=0
+		baseline=1
+		restart=0
+		dct=0
+		#ターゲットサイズの２倍のサイズで画像を用意
+		unionImage = pdb.gimp_image_new(self.width*2, self.height, RGB)
+		topLayer = pdb.gimp_layer_new(unionImage, self.width*2, self.height, RGB, "BASE", 0, 0)
+		pdb.gimp_image_add_layer(unionImage, topLayer, 0)
+		topLayer = pdb.gimp_image_merge_visible_layers(unionImage, gimpfu.CLIP_TO_IMAGE)
+		pdb.gimp_image_select_item(unionImage, 0, topLayer)
+		pdb.gimp_drawable_fill(topLayer, gimpfu.BACKGROUND_FILL)
+	
+		#左右ペアの画像を読み込み
+		pageA = pdb.gimp_file_load_layer(unionImage, lastFileName)
+		pdb.gimp_image_add_layer(unionImage, pageA, 0)
+		pageAoffsetX = 0 if self.direction == False else self.width + 1
+		pageAoffsetY = 0
+		pdb.gimp_layer_set_offsets(pageA, pageAoffsetX, pageAoffsetY)
+		filePrefix = self.finalPrefix + self.prefix + str(count+100)[1:3] + "_" + str(count+101)[1:3] 
+		if pngFileNameSave != "":
+			pageB = pdb.gimp_file_load_layer(unionImage, pngFileNameSave)
+			pdb.gimp_image_add_layer(unionImage, pageB, 0)
+			pageBoffsetX = 0 if self.direction == True else self.width + 1
+			pageBoffsetY = 0
+			pdb.gimp_layer_set_offsets(pageB, pageBoffsetX, pageBoffsetY)
+			filePrefix = self.finalPrefix + self.prefix + str(count+ 99)[1:3]  + "_" + str(count+100)[1:3] 
+		#結合画像をpngでエクスポート
+		pngLayer = pdb.gimp_image_merge_visible_layers(unionImage, gimpfu.CLIP_TO_IMAGE)
+		#切り取ったファイルをpngにエクスポート
+		pngFileName = self.works + "/" + filePrefix + ".png"
+		jpgFileName = self.works + "/" + filePrefix + ".jpg"
+		pdb.gimp_file_save(unionImage, pngLayer, pngFileName, pngFileName)
+		pdb.file_jpeg_save(unionImage, pngLayer, jpgFileName, jpgFileName,quality,smoothing,optimize,progressive,comment,subsmp,baseline,restart,dct)
+		pdb.gimp_image_delete(unionImage)
+		lastFileName = "";
+		pass
+           
 class AsyncCallParPage(threading.Thread):
-    def __init__(self, q, target, works, dpi, size, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, padding):
+    def __init__(self, q, target, baseName, works, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY):
         threading.Thread.__init__(self)
         self.q = q
         self.target = target
+        self.baseName = baseName
         self.works = works
-        self.dpi = dpi
-        self.size = size
-        self.frontPrefix = frontPrefix
-        self.mainPrefix = mainPrefix
-        self.rearPrefix = rearPrefix
-        self.direction = direction
         self.isCut = isCut
-        self.padding = padding
+        self.widthWrapper = widthWrapper
+        self.heightWrapper = heightWrapper
+        self.width = width
+        self.height = height
+        self.offsetX = offsetX
+        self.offsetY = offsetY
 
     def run(self):
         while True: 
-           item = self.q.get() 
-           print item
-           os.system(item)
+           file = self.q.get() 
+           self.doResize(file) 
            self.q.task_done() 
+	def doResize(self, file):
+		baseName,ext = os.path.splitext( os.path.basename(file) )
+		filename = self.target + "/" + baseName
+		pngFileName = self.works + "/" + baseName + "B.png"
+		pngFileNameSave = self.works + "/" + baseName + ".png"
+		jpgFileName = self.works + "/" + baseName + ".jpg"
+		img = pdb.gimp_file_load(filename, filename)
+		img.flatten()
+		layer = pdb.gimp_image_merge_visible_layers(img, gimpfu.CLIP_TO_IMAGE)
+		#pngにエクスポート
+		# 問題はオプションどうやって設定するのか。
+		pdb.gimp_file_save(img, layer, pngFileName, pngFileName)
+		#画像を閉じる。
+		pdb.gimp_image_delete(img)
+		#####################################################
+		widthWrapper = self.widthWrapper
+		heightWrapper = self.heightWrapper
+		offsetX = self.offsetX
+		offsetY = self.offsetY
+		if self.isCut == False:
+			widthWrapper = self.width
+			heightWrapper = self.height
+			offsetX = 0
+			offsetY = 0
+			pass	
+		#再度pngを開く
+		pngImg = pdb.gimp_file_load(pngFileName, pngFileName)
+		#目標のサイズに拡大縮小する。
+		pdb.gimp_image_scale(pngImg, widthWrapper, heightWrapper)
+		#8354 4177 5907
+		#内側を4907で中央から切り取り//
+		pdb.gimp_image_resize(pngImg, self.width, self.height, offsetX, offsetY)
+		pngLayer = pdb.gimp_image_merge_visible_layers(pngImg, gimpfu.CLIP_TO_IMAGE)
+		#切り取ったファイルをpngにエクスポート
+		pdb.gimp_file_save(pngImg, pngLayer, pngFileName, pngFileName)
+		NONINTERACTIVE=1
+		quality=1.00
+		smoothing=0.00
+		optimize=1
+		progressive=0
+		comment=""
+		subsmp=0
+		baseline=1
+		restart=0
+		dct=0
+		pdb.file_jpeg_save(pngImg, pngLayer, jpgFileName, jpgFileName,quality,smoothing,optimize,progressive,comment,subsmp,baseline,restart,dct)
+		#大きいpngは削除
+		pdb.gimp_file_save(pngImg, pngLayer, pngFileNameSave, pngFileNameSave)
+	
+		pdb.gimp_image_delete(pngImg)
+		return pngFileName
 #マルチスレッド実行
-def executeMultiProcess(files, target, works, dpi, size, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, padding):
+def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY):
     queueOfFront = Queue(0) 
     queueOfMain = Queue(0) 
     queueOfRear = Queue(0) 
 	listOfFront = []
 	listOfMain = []
 	listOfRear = []
+	files = os.listdir(target)
 	for file in sorted(files):
 		print file
 		name,ext = os.path.splitext( os.path.basename(file) )
@@ -78,17 +171,30 @@ def executeMultiProcess(files, target, works, dpi, size, frontPrefix, mainPrefix
 			queueOfRear.append(file)
 			listOfRear.append(file)
     for i in range(num_worker_threads): 
-        task = AsyncCall(queueOfFront)
+        task = AsyncCallParPage(queueOfFront, target, baseName, works, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
         task.start()
     for i in range(num_worker_threads): 
-        task = AsyncCall(queueOfMain)
+        task = AsyncCallParPage(queueOfMain, target, baseName, works, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
         task.start()
     for i in range(num_worker_threads): 
-        task = AsyncCall(queueOfRear)
+        task = AsyncCallParPage(queueOfRear, target, baseName, works, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
         task.start()
+    ###################################################
     queueOfFront.join()       #
+    queueUnionFront = makeUnionQueue(listOfFront)
+    for i in range(num_worker_threads): 
+        task = AsyncCallUnionFile(queueOfFront, finalPrefix, prefix, works, width, height, direction)
+        task.start()
     queueOfMain.join()       #
+    queueUnionMain = makeUnionQueue(queueOfMain)
+    for i in range(num_worker_threads): 
+        task = AsyncCallUnionFile(queueUnionMain, finalPrefix, prefix, works, width, height, direction)
+        task.start()
     queueOfRear.join()       #
+    queueUnionRear = makeUnionQueue(listOfRear)
+    for i in range(num_worker_threads): 
+        task = AsyncCallUnionFile(queueUnionRear, finalPrefix, prefix, works, width, height, direction)
+        task.start()
 
 def mansiki_build_images_for_copyprint(image, drowable, target, works, dpi, size, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, padding):
 	first = sys.path[0]
@@ -124,46 +230,7 @@ def mansiki_build_images_for_copyprint(image, drowable, target, works, dpi, size
 	offsetX = int(math.ceil((widthWrapper-width)/2))*-1
 	offsetY = int(math.ceil((heightWrapper-height)/2))*-1
 	pdb.gimp_message("START!!/size:" + size +"/width:" + str(width)+"/height:" + str(height)+"/widthWrapper:" + str(widthWrapper)+"/heightWrapper:" + str(heightWrapper)+"/offsetX:" + str(offsetX)+"/offsetY:" + str(offsetY))
-	files = os.listdir(target)
-	#一旦中でスケジュール表を作成する。
-	listOfFront = []
-	listOfMain = []
-	listOfRear = []
-	for file in files:
-		print file
-		name,ext = os.path.splitext( os.path.basename(file) )
-		if re.search(frontPrefix, name ) != None and re.search('.*\.xcf', file ) != None:
-			listOfFront.append(file)
-			pass
-		if re.search(mainPrefix, name ) != None and re.search('.*\.xcf', file ) != None:
-			listOfMain.append(file)
-			pass
-		if re.search(rearPrefix, name ) != None and re.search('.*\.xcf', file ) != None:
-			listOfRear.append(file)
-			pass
-		pass
-	# 3種類のファイル名について順番に取得し、配列に入れる。
-	#
-	#ファイル単位で処理
-	isCut = True
-	for file in sorted(listOfFront):
-		name,ext = os.path.splitext( os.path.basename(file) )
-		fileName = target + "/" + file
-		fileName = doResize(fileName,works,name,False,widthWrapper,heightWrapper,width,height,offsetX,offsetY)
-		pass
-	for file in sorted(listOfMain):
-		name,ext = os.path.splitext( os.path.basename(file) )
-		fileName = target + "/" + file
-		fileName = doResize(fileName,works,name,isCut,widthWrapper,heightWrapper,width,height,offsetX,offsetY)
-		pass
-	for file in sorted(listOfRear):
-		name,ext = os.path.splitext( os.path.basename(file) )
-		fileName = target + "/" + file
-		fileName = doResize(fileName,works,name,False,widthWrapper,heightWrapper,width,height,offsetX,offsetY)
-		pass
-	doUnionForPrint(finalPrefix,frontPrefix,listOfFront,works,width,height,offsetX,offsetY, direction)
-	doUnionForPrint(finalPrefix,mainPrefix,listOfMain,works,width,height,offsetX,offsetY, direction)
-	doUnionForPrint(finalPrefix,rearPrefix,listOfRear,works,width,height,offsetX,offsetY, direction)
+	executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY):
 	#上記のファイル名を記憶。
 	#上記を繰り替えす。
 	#---------------------------------------------------
@@ -174,53 +241,7 @@ def mansiki_build_images_for_copyprint(image, drowable, target, works, dpi, size
 	paperNum = math.floor(len(listOfFront)/2)+math.floor(len(listOfMain)/2)+math.floor(len(listOfRear)/2)
 	pdb.gimp_message("完了しました！処理時間：" + str(math.floor(elapsed_time/60))+"分/処理枚数："+str(pageNum)+"/紙："+str(paperNum))
 	pass
-def doResize(filename,works,baseName,isCut,widthWrapper,heightWrapper,width,height,offsetX,offsetY):
-	pngFileName = works + "/" + baseName + "B.png"
-	pngFileNameSave = works + "/" + baseName + ".png"
-	jpgFileName = works + "/" + baseName + ".jpg"
-	#pdb.gimp_message("pngFileName：" + pngFileName)
-	#pdb.gimp_message("/width:" + str(width)+"/height:" + str(height)+"/widthWrapper:" + str(widthWrapper)+"/heightWrapper:" + str(heightWrapper)+"/offsetX:" + str(offsetX)+"/offsetY:" + str(offsetY))
-	img = pdb.gimp_file_load(filename, filename)
-	img.flatten()
-	layer = pdb.gimp_image_merge_visible_layers(img, gimpfu.CLIP_TO_IMAGE)
-	#pngにエクスポート
-	# 問題はオプションどうやって設定するのか。
-	pdb.gimp_file_save(img, layer, pngFileName, pngFileName)
-	#画像を閉じる。
-	pdb.gimp_image_delete(img)
-	#####################################################
-	if isCut == False:
-		widthWrapper = width
-		heightWrapper = height
-		offsetX = 0
-		offsetY = 0
-		pass	
-	#再度pngを開く
-	pngImg = pdb.gimp_file_load(pngFileName, pngFileName)
-	#目標のサイズに拡大縮小する。
-	pdb.gimp_image_scale(pngImg,widthWrapper,heightWrapper)
-	#8354 4177 5907
-	#内側を4907で中央から切り取り//
-	pdb.gimp_image_resize(pngImg,width,height,offsetX,offsetY)
-	pngLayer = pdb.gimp_image_merge_visible_layers(pngImg, gimpfu.CLIP_TO_IMAGE)
-	#切り取ったファイルをpngにエクスポート
-	pdb.gimp_file_save(pngImg, pngLayer, pngFileName, pngFileName)
-	NONINTERACTIVE=1
-	quality=1.00
-	smoothing=0.00
-	optimize=1
-	progressive=0
-	comment=""
-	subsmp=0
-	baseline=1
-	restart=0
-	dct=0
-	pdb.file_jpeg_save(pngImg, pngLayer, jpgFileName, jpgFileName,quality,smoothing,optimize,progressive,comment,subsmp,baseline,restart,dct)
-	#大きいpngは削除
-	pdb.gimp_file_save(pngImg, pngLayer, pngFileNameSave, pngFileNameSave)
-	
-	pdb.gimp_image_delete(pngImg)
-	return pngFileName
+
 	
 def makeUnionQueue(listOfFile):
     queue = Queue(0) 
@@ -246,52 +267,7 @@ def makeUnionQueue(listOfFile):
 		lastFileName = "";
 		pass
 	pass
-def doUnionForPrintDo(finalPrefix, prefix, fileNames,works,width,height,offsetX,offsetY, direction):
-	(lastFileName, pngFileNameSave) = fileNames
-	RGB=0
-	WHITEFILL=2
-	NONINTERACTIVE=1
-	quality=1.00
-	smoothing=0.00
-	optimize=1
-	progressive=0
-	comment=""
-	subsmp=0
-	baseline=1
-	restart=0
-	dct=0
-	#ターゲットサイズの２倍のサイズで画像を用意
-	unionImage = pdb.gimp_image_new(width*2, height, RGB)
-	topLayer = pdb.gimp_layer_new(unionImage, width*2, height, RGB, "BASE", 0, 0)
-	pdb.gimp_image_add_layer(unionImage, topLayer, 0)
-	topLayer = pdb.gimp_image_merge_visible_layers(unionImage, gimpfu.CLIP_TO_IMAGE)
-	pdb.gimp_image_select_item(unionImage, 0, topLayer)
-	pdb.gimp_drawable_fill(topLayer, gimpfu.BACKGROUND_FILL)
-	
-	#左右ペアの画像を読み込み
-	pageA = pdb.gimp_file_load_layer(unionImage, lastFileName)
-	pdb.gimp_image_add_layer(unionImage, pageA, 0)
-	pageAoffsetX = 0 if direction == False else width + 1
-	pageAoffsetY = 0
-	pdb.gimp_layer_set_offsets(pageA, pageAoffsetX, pageAoffsetY)
-	filePrefix = finalPrefix + prefix + str(count+100)[1:3] + "_" + str(count+101)[1:3] 
-	if pngFileNameSave != "":
-		pageB = pdb.gimp_file_load_layer(unionImage, pngFileNameSave)
-		pdb.gimp_image_add_layer(unionImage, pageB, 0)
-		pageBoffsetX = 0 if direction == True else width + 1
-		pageBoffsetY = 0
-		pdb.gimp_layer_set_offsets(pageB, pageBoffsetX, pageBoffsetY)
-		filePrefix = finalPrefix + prefix + str(count+ 99)[1:3]  + "_" + str(count+100)[1:3] 
-	#結合画像をpngでエクスポート
-	pngLayer = pdb.gimp_image_merge_visible_layers(unionImage, gimpfu.CLIP_TO_IMAGE)
-	#切り取ったファイルをpngにエクスポート
-	pngFileName = works + "/" + filePrefix + ".png"
-	jpgFileName = works + "/" + filePrefix + ".jpg"
-	pdb.gimp_file_save(unionImage, pngLayer, pngFileName, pngFileName)
-	pdb.file_jpeg_save(unionImage, pngLayer, jpgFileName, jpgFileName,quality,smoothing,optimize,progressive,comment,subsmp,baseline,restart,dct)
-	pdb.gimp_image_delete(unionImage)
-	lastFileName = "";
-	pass
+
 
 gimpfu.register(
         # name

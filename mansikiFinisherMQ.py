@@ -28,7 +28,7 @@ class AsyncCallUnionFile(threading.Thread):
     def run(self):
         while True: 
 			fileNames = self.q.get() 
-			(lastFileName, pngFileNameSave) = fileNames
+			(lastFileName, pngFileNameSave,count) = fileNames
 			RGB=0
 			WHITEFILL=2
 			NONINTERACTIVE=1
@@ -143,7 +143,7 @@ class AsyncCallParPage(threading.Thread):
 			pdb.gimp_image_delete(pngImg)
 			self.q.task_done() 
 #マルチスレッド実行
-def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY):
+def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY, numWorkerThreads):
 	queueOfFront = Queue(0) 
 	queueOfMain = Queue(0) 
 	queueOfRear = Queue(0) 
@@ -152,7 +152,7 @@ def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,final
 	listOfRear = []
 	files = os.listdir(target)
 	for file in sorted(files):
-		print file
+		#print file
 		name,ext = os.path.splitext( os.path.basename(file) )
 		if re.search(frontPrefix, name ) != None and re.search('.*\.xcf', file ) != None:
 			queueOfFront.put(file)
@@ -163,39 +163,40 @@ def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,final
 		if re.search(rearPrefix, name ) != None and re.search('.*\.xcf', file ) != None:
 			queueOfRear.put(file)
 			listOfRear.append(file)
-	for i in range(num_worker_threads):
-		task = AsyncCallParPage(queueOfFront, target, works, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
+	for i in range(numWorkerThreads):
+		task = AsyncCallParPage(queueOfFront, target, works, False, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
 		task.start()
-	for i in range(num_worker_threads):
+	for i in range(numWorkerThreads):
 		task = AsyncCallParPage(queueOfMain, target, works, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
 		task.start()
-	for i in range(num_worker_threads):
-		task = AsyncCallParPage(queueOfRear, target, works, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
+	for i in range(numWorkerThreads):
+		task = AsyncCallParPage(queueOfRear, target, works, False, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
 		task.start()
 	###################################################
 	queueOfFront.join()       #
 	queueUnionFront = makeUnionQueue(works, listOfFront)
-	for i in range(num_worker_threads): 
-		task = AsyncCallUnionFile(queueOfFront, finalPrefix, frontPrefix, works, width, height, direction)
+	for i in range(numWorkerThreads): 
+		task = AsyncCallUnionFile(queueUnionFront, finalPrefix, frontPrefix, works, width, height, direction)
 		task.start()
 	queueOfMain.join()       #
 	queueUnionMain = makeUnionQueue(works, listOfMain)
-	for i in range(num_worker_threads): 
+	for i in range(numWorkerThreads): 
 		task = AsyncCallUnionFile(queueUnionMain, finalPrefix, mainPrefix, works, width, height, direction)
 		task.start()
 	queueOfRear.join()       #
 	queueUnionRear = makeUnionQueue(works, listOfRear)
-	for i in range(num_worker_threads): 
+	for i in range(numWorkerThreads): 
 		task = AsyncCallUnionFile(queueUnionRear, finalPrefix, rearPrefix, works, width, height, direction)
 		task.start()
-	pass
 	queueUnionFront.join()       #
 	queueUnionMain.join()       #
 	queueUnionRear.join()       #
 	pageNum = len(listOfFront)+len(listOfMain)+len(listOfRear)
 	paperNum = math.floor(len(listOfFront)/2)+math.floor(len(listOfMain)/2)+math.floor(len(listOfRear)/2)
-	return "/処理枚数："+str(pageNum)+"/紙："+str(paperNum)
-def mansiki_build_images_for_mq_copyprint(image, drowable, target, works, dpi, size, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, padding):
+	endMessage = "/処理枚数："+str(pageNum)+"/紙："+str(paperNum)
+	print endMessage
+	return endMessage
+def mansiki_build_images_for_mq_copyprint(image, drowable, target, works, dpi, size, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, padding, numWorkerThreads):
 	first = sys.path[0]
 	start_time = time.time()
 	print ("elapsed_time:{0}".format(start_time)) + "[sec]"
@@ -228,8 +229,8 @@ def mansiki_build_images_for_mq_copyprint(image, drowable, target, works, dpi, s
 		heightWrapper = int(math.ceil(364*(dpi/25.4))) 
 	offsetX = int(math.ceil((widthWrapper-width)/2))*-1
 	offsetY = int(math.ceil((heightWrapper-height)/2))*-1
-	pdb.gimp_message("START!!/size:" + size +"/width:" + str(width)+"/height:" + str(height)+"/widthWrapper:" + str(widthWrapper)+"/heightWrapper:" + str(heightWrapper)+"/offsetX:" + str(offsetX)+"/offsetY:" + str(offsetY))
-	result = executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
+	pdb.gimp_message("START!!/size:" + size +"/width:" + str(width)+"/height:" + str(height)+"/widthWrapper:" + str(widthWrapper)+"/heightWrapper:" + str(heightWrapper)+"/offsetX:" + str(offsetX)+"/offsetY:" + str(offsetY)+"/numWorkerThreads:"+str(numWorkerThreads))
+	result = executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY, numWorkerThreads)
 	#上記のファイル名を記憶。
 	#上記を繰り替えす。
 	#---------------------------------------------------
@@ -250,13 +251,13 @@ def makeUnionQueue(works, listOfFile):
 		name,ext = os.path.splitext( os.path.basename(file) )
 		pngFileNameSave = works + "/" + name + ".png"
 		if mod == 0 :
-			filNames = (lastFileName,pngFileNameSave)
+			filNames = (lastFileName,pngFileNameSave,count)
 			queue.put(filNames)
 			lastFileName = ""
 		else :
 			lastFileName = pngFileNameSave
 	if lastFileName != "":
-		filNames = (lastFileName,"")
+		filNames = (lastFileName,"",count)
 		queue.put(filNames)
 		lastFileName = "";
 	return queue
@@ -266,7 +267,7 @@ gimpfu.register(
         # name
         "python-fu-mansiki-build-images-for-mq-copyprint",
         # blurb
-        "python-fu mansiki-build-images-for-mq-copyprint\n漫式原稿用紙コンビニ印刷用用紙整形スクリプト",
+        "python-fu mansiki-build-images-for-mq-copyprint\n漫式原稿用紙コンビニ印刷用用紙整形スクリプト\nマルチスレッド対応版",
         # help
         "experiment",
         # author
@@ -303,6 +304,7 @@ gimpfu.register(
         , (gimpfu.PF_BOOL, "direction",    " ←ページ送り",   True)
         , (gimpfu.PF_BOOL, "isCutMain",    " メインページ切り取り",   True)
         , (gimpfu.PF_FLOAT, "padding",    " 余白mm",   2.64)
+        , (gimpfu.PF_INT, "numWorkerThreads",    " 実行スレッド数",   2)
          ],
         # results
         [],

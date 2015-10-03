@@ -9,10 +9,7 @@ from Queue import Queue
 #---------------------------------------------------------------------
 first = sys.path[0]
 curdir = first + "/" # カレントディレクトリ名を取得
-print "curdir:" + curdir
 sys.path.insert(1, curdir)
-num_worker_threads =2
-cmd = "gimp --no-interface --console-messages --no-data --no-splash --batch-interpreter python-fu-eval --batch - < " + curdir + "makeImage.py "
 #---------------------------------------------------------------------
 # Queue
 class AsyncCallUnionFile(threading.Thread):
@@ -206,7 +203,6 @@ def mansiki_build_images_for_mq_copyprint(image, drowable, target, works, dpi, s
 	#ファイル一覧を取得
 	#target = "/home/alfx61/画像/4prints/test"
 	if os.path.exists(target) == False :
-		#pdb.gimp_message(
 		print "指定のディレクトリが存在しません。[ " + target + " ]"
 		return
 	#pngの画像サイズをA4@600dpiに変換
@@ -262,8 +258,7 @@ def makeUnionQueue(works, listOfFile):
 		queue.put(filNames)
 		lastFileName = "";
 	return queue
-
-
+###############################
 gimpfu.register(
         # name
         "python-fu-mansiki-build-images-for-mq-copyprint",
@@ -311,6 +306,5 @@ gimpfu.register(
         [],
         # function
         mansiki_build_images_for_mq_copyprint)
-
-gimpfu.main()
+#gimpfu.main()
 #gimpfu.pdb.gimp_quit(1)

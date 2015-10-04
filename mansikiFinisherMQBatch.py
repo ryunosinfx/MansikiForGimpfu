@@ -12,6 +12,11 @@ curdir = first + "/" # カレントディレクトリ名を取得
 sys.path.insert(1, curdir)
 #---------------------------------------------------------------------
 # Queue
+class ForceThreadEndingError(Exception):
+	def __init__(self, value):
+		self.value = value
+	def __str__(self):
+		return repr(self.value)
 class AsyncCallUnionFile(threading.Thread):
     def __init__(self, q, finalPrefix, prefix, works, width, height, direction):
         threading.Thread.__init__(self)
@@ -22,6 +27,8 @@ class AsyncCallUnionFile(threading.Thread):
         self.width = width
         self.height = height
         self.direction = direction
+        self.daemon = True
+        self.stop_event = threading.Event() #停止させるかのフラグ
     def run(self):
         while True: 
 			fileNames = self.q.get() 
@@ -70,7 +77,9 @@ class AsyncCallUnionFile(threading.Thread):
 			pdb.gimp_image_delete(unionImage)
 			lastFileName = "";
 			self.q.task_done() 
-           
+    def stop(self): #スレッドを停止させる
+        self.stop_event.set()
+        raise ForceThreadEndingError('AsyncCallUnionFile')
 class AsyncCallParPage(threading.Thread):
     def __init__(self, q, target, works, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY):
         threading.Thread.__init__(self)
@@ -84,12 +93,14 @@ class AsyncCallParPage(threading.Thread):
         self.height = height
         self.offsetX = offsetX
         self.offsetY = offsetY
+        self.daemon = True
+        self.stop_event = threading.Event() #停止させるかのフラグ
     def run(self):
         while True: 
 			file = self.q.get() 
-			print file
+			print "processing file:"+file
 			baseName,ext = os.path.splitext( os.path.basename(file) )
-			print baseName
+			#print baseName
 			filename = self.target + "/" + file
 			pngFileName = self.works + "/" + baseName + "B.png"
 			pngFileNameSave = self.works + "/" + baseName + ".png"
@@ -139,6 +150,9 @@ class AsyncCallParPage(threading.Thread):
 	
 			pdb.gimp_image_delete(pngImg)
 			self.q.task_done() 
+    def stop(self): #スレッドを停止させる
+        self.stop_event.set()
+        raise ForceThreadEndingError('AsyncCallParPage')
 #マルチスレッド実行
 def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY, numWorkerThreads):
 	queueOfFront = Queue(0) 
@@ -188,12 +202,37 @@ def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,final
 	queueUnionFront.join()       #
 	queueUnionMain.join()       #
 	queueUnionRear.join()       #
+	threadsTerminate()
 	pageNum = len(listOfFront)+len(listOfMain)+len(listOfRear)
 	paperNum = math.floor(len(listOfFront)/2)+math.floor(len(listOfMain)/2)+math.floor(len(listOfRear)/2)
 	endMessage = "/処理枚数："+str(pageNum)+"/紙："+str(paperNum)
 	print endMessage
 	return endMessage
-def mansiki_build_images_for_mq_copyprint(image, drowable, target, works, dpi, size, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, padding, numWorkerThreads):
+def threadsTerminate():
+	#####スレッドを例外経由でぶっ殺す######################################
+	tlist=threading.enumerate()
+	print "threadsTerminate!---START---ThreadNum:"+str(len(tlist))
+	main_thread=threading.currentThread()
+	for t in tlist:
+		if t is main_thread: continue
+		try:
+			#print t
+			t.stop()
+			t.join(10)
+		except ForceThreadEndingError,exp:
+			print "ForceThreadEndingError:", exp
+		except:
+			print "expected error:", sys.exc_info()[0]
+		else:
+			print "end!"
+	time.sleep(10)
+	tlist=threading.enumerate()
+	print "threadsTerminate!---END---ThreadNum:"+str(len(tlist))
+	for t in tlist:
+		if t is main_thread: continue
+		print t
+	###########################################
+def run(image, drowable, target, works, dpi, size, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, padding, numWorkerThreads):
 	first = sys.path[0]
 	start_time = time.time()
 	print ("elapsed_time:{0}".format(start_time)) + "[sec]"
@@ -234,8 +273,9 @@ def mansiki_build_images_for_mq_copyprint(image, drowable, target, works, dpi, s
 	curdir = sys.path[0] + "/" # カレントディレクトリ名を取得
 	#pdb.gimp_message("" + curdir)
 	elapsed_time = time.time() - start_time
-	print "完了しました！処理時間：" + str(math.floor(elapsed_time/60))+"分"+result
-	pass
+	msg = "完了しました！処理時間：" + str(math.floor(elapsed_time/60))+"分"+result
+	print msg
+	return msg
 
 def makeUnionQueue(works, listOfFile):
 	queue = Queue(0) 
@@ -258,53 +298,3 @@ def makeUnionQueue(works, listOfFile):
 		queue.put(filNames)
 		lastFileName = "";
 	return queue
-###############################
-gimpfu.register(
-        # name
-        "python-fu-mansiki-build-images-for-mq-copyprint",
-        # blurb
-        "python-fu mansiki-build-images-for-mq-copyprint\n漫式原稿用紙コンビニ印刷用用紙整形スクリプト\nマルチスレッド対応版",
-        # help
-        "experiment",
-        # author
-        "experiment <ryunosinfx2._{at}_.gmail.com>",
-        # copyright
-        "experiment",
-        # date
-        "2015",
-        # menupath
-        "<Image>/Python-Fu/MansikiBuildImagesForCopyPrintMQ",
-        # imagetypes
-        "",
-        # params
-        [
-         (
-            # ディレクトリ選択、 変数名、ラベル、初期値
-            gimpfu.PF_DIRNAME, "target","対象格納\nディレクトリ",expanduser("~")
-            )
-        , (
-            # ディレクトリ選択、 変数名、ラベル、初期値
-            gimpfu.PF_DIRNAME, "works", "作業、結果格納\nディレクトリ", (expanduser("~")+"/tmp") 
-            )
-        #ページ数
-        , (gimpfu.PF_INT, "dpi", "解像度dpi", 600)
-        #ページ数
-        , (gimpfu.PF_RADIO, "size", "印刷製本サイズ", "B5", (("A4", "A4"), ("B5", "B5"), ("A5", "A5")))
-        #スタイル名
-        , (gimpfu.PF_STRING, "frontPrefix", "xcf表紙接頭文字列", "Front_")
-        #スタイル名
-        , (gimpfu.PF_STRING, "mainPrefix", "xcf本文接頭文字列", "Main_")
-        #スタイル名
-        , (gimpfu.PF_STRING, "rearPrefix", "xcf裏表紙接頭文字列", "Rear_")
-        , (gimpfu.PF_STRING, "finalPrefix", "最終出力品接頭文字列", "U_")
-        , (gimpfu.PF_BOOL, "direction",    " ←ページ送り",   True)
-        , (gimpfu.PF_BOOL, "isCutMain",    " メインページ切り取り",   True)
-        , (gimpfu.PF_FLOAT, "padding",    " 余白mm",   2.64)
-        , (gimpfu.PF_INT, "numWorkerThreads",    " 実行スレッド数",   2)
-         ],
-        # results
-        [],
-        # function
-        mansiki_build_images_for_mq_copyprint)
-#gimpfu.main()
-#gimpfu.pdb.gimp_quit(1)

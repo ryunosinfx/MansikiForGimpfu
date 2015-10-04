@@ -22,5 +22,5 @@ direction=True
 isCut=True
 padding=2.64
 numWorkerThreads=2
-mansikiFinisherMQBatch.mansiki_build_images_for_mq_copyprint(image, drowable, target, works, dpi, size, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, padding, numWorkerThreads)
-
+mansikiFinisherMQBatch.run(image, drowable, target, works, dpi, size, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, padding, numWorkerThreads)
+gimpfu.pdb.gimp_quit(1)

@@ -1,0 +1,14 @@
+{
+"target":"/home/alfx61/画像/4prints/test",
+"works":"/home/alfx61/tmp",
+"dpi":"600",
+"size":"B5",
+"frontPrefix":"Front_",
+"mainPrefix":"Main_",
+"rearPrefix":"Rear_",
+"finalPrefix":"U_",
+"direction":"True",
+"isCut":"True",
+"padding":"2.64",
+"numWorkerThreads":"2"
+}

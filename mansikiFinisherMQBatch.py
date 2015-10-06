@@ -1,11 +1,14 @@
 #!/usr/bin/python
 # coding: UTF-8
 
-import sys,os,re,gimpfu,math,time,threading
+import sys,os,re,math,time,threading
 sys.path.insert(1, '/usr/lib/gimp/2.0/python')
+import gimpfu
 from gimpfu import *
 from os.path import expanduser
 from Queue import Queue
+import mansikiFinisherPDF
+
 #---------------------------------------------------------------------
 first = sys.path[0]
 curdir = first + "/" # カレントディレクトリ名を取得
@@ -154,7 +157,7 @@ class AsyncCallParPage(threading.Thread):
         self.stop_event.set()
         raise ForceThreadEndingError('AsyncCallParPage')
 #マルチスレッド実行
-def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY, numWorkerThreads):
+def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY, numWorkerThreads, dpi, size):
 	queueOfFront = Queue(0) 
 	queueOfMain = Queue(0) 
 	queueOfRear = Queue(0) 
@@ -183,6 +186,8 @@ def executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,final
 	for i in range(numWorkerThreads):
 		task = AsyncCallParPage(queueOfRear, target, works, False, widthWrapper, heightWrapper, width, height, offsetX, offsetY)
 		task.start()
+	###################################################
+	mansikiFinisherPDF.pdfMakeBy3Element("pdftest", works, dpi, size, listOfFront,listOfMain,listOfRear)
 	###################################################
 	queueOfFront.join()       #
 	queueUnionFront = makeUnionQueue(works, listOfFront)
@@ -266,7 +271,7 @@ def run(image, drowable, target, works, dpi, size, frontPrefix, mainPrefix, rear
 	offsetX = int(math.ceil((widthWrapper-width)/2))*-1
 	offsetY = int(math.ceil((heightWrapper-height)/2))*-1
 	print "START!!/size:" + size +"/width:" + str(width)+"/height:" + str(height)+"/widthWrapper:" + str(widthWrapper)+"/heightWrapper:" + str(heightWrapper)+"/offsetX:" + str(offsetX)+"/offsetY:" + str(offsetY)+"/numWorkerThreads:"+str(numWorkerThreads)
-	result = executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY, numWorkerThreads)
+	result = executeMultiProcess(target, works, frontPrefix, mainPrefix, rearPrefix,finalPrefix, direction, isCut, widthWrapper, heightWrapper, width, height, offsetX, offsetY, numWorkerThreads, dpi, size)
 	#上記のファイル名を記憶。
 	#上記を繰り替えす。
 	#---------------------------------------------------
@@ -286,6 +291,8 @@ def makeUnionQueue(works, listOfFile):
 		count += 1
 		mod = count % 2
 		name,ext = os.path.splitext( os.path.basename(file) )
+		if name == "" :
+			break
 		pngFileNameSave = works + "/" + name + ".png"
 		if mod == 0 :
 			filNames = (lastFileName,pngFileNameSave,count)
@@ -298,3 +305,6 @@ def makeUnionQueue(works, listOfFile):
 		queue.put(filNames)
 		lastFileName = "";
 	return queue
+    
+    
+    
